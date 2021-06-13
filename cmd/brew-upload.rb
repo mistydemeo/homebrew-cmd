@@ -1,0 +1,98 @@
+require "cli/parser"
+require "digest/sha2"
+require "github_packages"
+
+module Homebrew
+  module_function
+
+  BOTTLE_REGEX = /^(?<name>\S+)-(?<version>[\d.]+)_?(?<revision>\d)?\.(?<os>\w+)\.bottle\.?(?<rebuild>\d+)?\.tar\.gz/
+
+  def upload_args
+    Homebrew::CLI::Parser.new do
+      description <<~EOS
+        Upload the named bottle to GitHub Packages.
+      EOS
+      named_args :bottle
+    end
+  end
+
+  def upload
+    args = upload_args.parse
+    filename = args.named.first
+    # FIXME filename
+    if File.exist?("data.json")
+      bottles_hash = JSON.parse(File.read("data.json"))
+    else
+      bottles_hash = assemble_fake_json(args)
+    end
+
+    github_releases = GitHubPackages.new(org: "homebrew")
+    github_releases.upload_bottles(bottles_hash)
+  end
+
+  def sha256(filename)
+    Digest::SHA256.hexdigest(File.read(filename))
+  end
+
+  def fetch_tab(filename)
+    files = `tar -tf "#{filename}" '*INSTALL_RECEIPT.json' 2>&1`.chomp.split
+
+    return if files.empty?
+    tab = files.first
+
+    JSON.parse(`tar -xzf "#{filename}" --to-stdout "#{tab}"`)
+  end
+
+  # We can't parse this out of some old bottles. But we can figure it
+  # out ourselves.
+  def assemble_fake_json(args)
+    filename = args.named.first
+    match = BOTTLE_REGEX.match(filename)
+
+    tab = fetch_tab(filename)
+
+    if match
+      shasum = sha256(filename)
+      tags = {
+        match["os"] => {
+          "filename" => filename,
+          "local_filename" => filename,
+          "sha256" => shasum,
+        }
+      }
+    else
+      $stderr.puts "Unable to parse bottle name!"
+      return
+    end
+
+    rebuild = match["rebuild"] || 0
+    rebuild = Integer(rebuild)
+    bottles_hash = {
+      match["name"] => {
+        "formula" => {
+          "name" => match["name"],
+          "homepage" => "",
+          "desc" => "",
+          "license" => "",
+          "pkg_version" => match["version"] + "_" + match["revision"],
+          "tap_git_path" => "Formula/#{match["name"]}.rb",
+          "tap_git_revision" => "",
+        },
+        "bottle" => {
+          "rebuild" => rebuild,
+          "root_url" => "https://ghcr.io/v2/homebrew/core",
+          "date" => Pathname(filename.to_s).mtime.strftime("%F"),
+          "tags" => tags,
+        }
+      }
+    }
+
+    if !tab.nil?
+      bottles_hash[match["name"]]["bottle"]["tags"][match["os"]]["tab"] = tab
+    end
+
+    bottles_hash
+  end
+end
+
+Homebrew.upload
