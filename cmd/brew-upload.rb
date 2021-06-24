@@ -55,7 +55,7 @@ module Homebrew
       shasum = sha256(filename)
       tags = {
         match["os"] => {
-          "filename" => filename,
+          "filename" => target_filename.to_s,
           "local_filename" => filename,
           "sha256" => shasum,
         }
@@ -67,6 +67,9 @@ module Homebrew
 
     rebuild = match["rebuild"] || 0
     rebuild = Integer(rebuild)
+
+    target_filename = Bottle::Filename.new(match["name"], match["version"], match["os"], rebuild)
+
     bottles_hash = {
       match["name"] => {
         "formula" => {
