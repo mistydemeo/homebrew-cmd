@@ -55,7 +55,7 @@ module Homebrew
         }
       }
 
-      if tag
+      if tab
         tags[match["os"]]["tab"] = tab
       end
     else
