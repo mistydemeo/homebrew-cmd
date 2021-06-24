@@ -19,12 +19,7 @@ module Homebrew
   def upload
     args = upload_args.parse
     filename = args.named.first
-    # FIXME filename
-    if File.exist?("data.json")
-      bottles_hash = JSON.parse(File.read("data.json"))
-    else
-      bottles_hash = assemble_fake_json(args)
-    end
+    bottles_hash = assemble_fake_json(args)
 
     github_releases = GitHubPackages.new(org: "homebrew")
     github_releases.upload_bottles(bottles_hash)
