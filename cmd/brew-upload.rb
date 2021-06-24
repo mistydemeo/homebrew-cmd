@@ -60,6 +60,10 @@ module Homebrew
           "sha256" => shasum,
         }
       }
+
+      if tag
+        tags[match["os"]]["tab"] = tab
+      end
     else
       $stderr.puts "Unable to parse bottle name!"
       return
@@ -89,10 +93,6 @@ module Homebrew
         }
       }
     }
-
-    if !tab.nil?
-      bottles_hash[match["name"]]["bottle"]["tags"][match["os"]]["tab"] = tab
-    end
 
     bottles_hash
   end
