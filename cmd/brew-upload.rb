@@ -19,7 +19,7 @@ module Homebrew
   def upload
     args = upload_args.parse
     filename = args.named.first
-    bottles_hash = assemble_fake_json(args)
+    bottles_hash = assemble_fake_json(filename)
 
     github_releases = GitHubPackages.new(org: "homebrew")
     github_releases.upload_bottles(bottles_hash)
@@ -40,8 +40,7 @@ module Homebrew
 
   # We can't parse this out of some old bottles. But we can figure it
   # out ourselves.
-  def assemble_fake_json(args)
-    filename = args.named.first
+  def assemble_fake_json(filename)
     match = BOTTLE_REGEX.match(filename)
 
     tab = fetch_tab(filename)
