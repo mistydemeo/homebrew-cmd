@@ -73,7 +73,8 @@ module Homebrew
     begin
       bottle_data = JSON.parse(fetch_bottle_data(data).read)
       versions = bottle_data["manifests"].map {|manifest| manifest["annotations"]["org.opencontainers.image.ref.name"]}
-      local_version = data.pkg_version + "." + bottles_hash[data.name]["bottle"]["tags"].keys.first + "." + data.rebuild.to_s
+      local_version = data.pkg_version + "." + bottles_hash[data.name]["bottle"]["tags"].keys.first
+      local_version +=  ".#{data.rebuild.to_s}" if data.rebuild > 0
 
       should_skip = true if versions.include?(local_version)
     rescue DownloadError, JSON::ParserError
