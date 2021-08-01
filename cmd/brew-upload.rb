@@ -53,6 +53,7 @@ module Homebrew
     bottles_hash = data.bottles_hash
 
     should_skip = false
+    source_exists = true
     begin
       bottle_data = JSON.parse(fetch_bottle_data(data).read)
       versions = bottle_data["manifests"].map {|manifest| manifest["annotations"]["org.opencontainers.image.ref.name"]}
@@ -61,6 +62,7 @@ module Homebrew
       should_skip = true if versions.include?(local_version)
     rescue DownloadError, JSON::ParserError
       should_skip = false
+      source_exists = false
     end
 
     if should_skip
