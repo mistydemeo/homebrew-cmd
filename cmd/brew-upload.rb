@@ -53,8 +53,14 @@ module Homebrew
       puts "No bottle named!"
       exit 1
     end
-    filename = args.named.first
     dry_run = args.dry_run?
+
+    filename = args.named.first
+    # Messy, sure, but it works
+    if filename != File.basename(filename)
+      Dir.chdir(File.dirname(filename))
+      filename = File.basename(filename)
+    end
 
     data = assemble_fake_json(filename)
     bottles_hash = data.bottles_hash
