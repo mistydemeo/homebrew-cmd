@@ -51,13 +51,12 @@ module Homebrew
 
     data = assemble_fake_json(filename)
     bottles_hash = data.bottles_hash
-    bottles_hash = assemble_fake_json(filename)
 
     should_skip = false
     begin
       bottle_data = JSON.parse(fetch_bottle_data(data).read)
       versions = bottle_data["manifests"].map {|manifest| manifest["annotations"]["org.opencontainers.image.ref.name"]}
-      local_version = bottles_hash[name]["pkg_version"] + "." + bottles_hash[name]["bottle"]["tags"].keys.first
+      local_version = data.pkg_version + "." + bottles_hash[data.name]["bottle"]["tags"].keys.first + "." + data.rebuild.to_s
 
       should_skip = true if versions.include?(local_version)
     rescue DownloadError, JSON::ParserError
@@ -70,7 +69,7 @@ module Homebrew
     end
 
     github_releases = GitHubPackages.new(org: "homebrew")
-    github_releases.upload_bottles(bottles_hash)
+    github_releases.upload_bottles(bottles_hash, keep_old: true, dry_run: true, warn_on_error: false)
   end
 
   def sha256(filename)
@@ -90,6 +89,9 @@ module Homebrew
   # out ourselves.
   def assemble_fake_json(filename)
     match = BOTTLE_REGEX.match(filename)
+    rebuild = match["rebuild"] || 0
+    rebuild = Integer(rebuild)
+    target_filename = Bottle::Filename.new(match["name"], match["version"], match["os"], rebuild)
 
     tab = fetch_tab(filename)
 
@@ -110,11 +112,6 @@ module Homebrew
       $stderr.puts "Unable to parse bottle name!"
       return
     end
-
-    rebuild = match["rebuild"] || 0
-    rebuild = Integer(rebuild)
-
-    target_filename = Bottle::Filename.new(match["name"], match["version"], match["os"], rebuild)
 
     pkg_version = if match["revision"]
       match["version"] + "_" + match["revision"]
