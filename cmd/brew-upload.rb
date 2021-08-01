@@ -25,6 +25,8 @@ module Homebrew
         Upload the named bottle to GitHub Packages.
       EOS
       named_args :bottle
+      switch "-n", "--dry-run",
+             description: "Print what would be done rather than doing it."
     end
   end
 
@@ -47,7 +49,12 @@ module Homebrew
 
   def upload
     args = upload_args.parse
+    if args.no_named?
+      puts "No bottle named!"
+      exit 1
+    end
     filename = args.named.first
+    dry_run = args.dry_run?
 
     data = assemble_fake_json(filename)
     bottles_hash = data.bottles_hash
@@ -70,8 +77,11 @@ module Homebrew
       return 0
     end
 
+    # We only keep_old if there's already metadata there.
+    keep_old = source_exists
+
     github_releases = GitHubPackages.new(org: "homebrew")
-    github_releases.upload_bottles(bottles_hash, keep_old: true, dry_run: true, warn_on_error: false)
+    github_releases.upload_bottles(bottles_hash, keep_old: keep_old, dry_run: dry_run, warn_on_error: false)
   end
 
   def sha256(filename)
