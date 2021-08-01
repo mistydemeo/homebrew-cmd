@@ -42,7 +42,10 @@ module Homebrew
       using:   CurlGitHubPackagesDownloadStrategy,
       headers: ["Accept: application/vnd.oci.image.index.v1+json"],
     })
-    resource.downloader.resolved_basename = "#{name}-#{version_rebuild}.bottle_manifest.json"
+    resource.downloader.resolved_basename = "#{spec.name}-#{version_rebuild}.bottle_manifest.json"
+    # We'll be rebuilding this frequently; we need to download it
+    # fresh every time.
+    resource.cached_download.delete if resource.cached_download.exist?
 
     resource.fetch(verify_download_integrity: false)
   end
