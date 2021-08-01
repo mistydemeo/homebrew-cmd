@@ -5,7 +5,19 @@ require "github_packages"
 module Homebrew
   module_function
 
+  class UploadBottleData
+    attr_reader :name, :pkg_version, :rebuild, :bottles_hash
+
+    def initialize(name, pkg_version, rebuild, bottles_hash)
+      @name = name
+      @pkg_version = pkg_version
+      @rebuild = rebuild
+      @bottles_hash = bottles_hash
+    end
+  end
+
   BOTTLE_REGEX = /^(?<name>\S+)-(?<version>[\d.]+)_?(?<revision>\d)?\.(?<os>\w+)\.bottle\.?(?<rebuild>\d+)?\.tar\.gz/
+  ROOT_URL = "https://ghcr.io/v2/homebrew/core"
 
   def upload_args
     Homebrew::CLI::Parser.new do
@@ -16,10 +28,46 @@ module Homebrew
     end
   end
 
+  def fetch_bottle_data(spec)
+    resource = Resource.new("#{spec.name}_bottle_manifest")
+
+    version_rebuild = GitHubPackages.version_rebuild(spec.pkg_version, spec.rebuild)
+    resource.version(version_rebuild)
+
+    image_name = GitHubPackages.image_formula_name(spec.name)
+    image_tag = GitHubPackages.image_version_rebuild(version_rebuild)
+    resource.url("#{ROOT_URL}/#{image_name}/manifests/#{image_tag}", {
+      using:   CurlGitHubPackagesDownloadStrategy,
+      headers: ["Accept: application/vnd.oci.image.index.v1+json"],
+    })
+    resource.downloader.resolved_basename = "#{name}-#{version_rebuild}.bottle_manifest.json"
+
+    resource.fetch(verify_download_integrity: false)
+  end
+
   def upload
     args = upload_args.parse
     filename = args.named.first
+
+    data = assemble_fake_json(filename)
+    bottles_hash = data.bottles_hash
     bottles_hash = assemble_fake_json(filename)
+
+    should_skip = false
+    begin
+      bottle_data = JSON.parse(fetch_bottle_data(data).read)
+      versions = bottle_data["manifests"].map {|manifest| manifest["annotations"]["org.opencontainers.image.ref.name"]}
+      local_version = bottles_hash[name]["pkg_version"] + "." + bottles_hash[name]["bottle"]["tags"].keys.first
+
+      should_skip = true if versions.include?(local_version)
+    rescue DownloadError, JSON::ParserError
+      should_skip = false
+    end
+
+    if should_skip
+      $stderr.puts "Skipping; bottle already uploaded for this version"
+      return 0
+    end
 
     github_releases = GitHubPackages.new(org: "homebrew")
     github_releases.upload_bottles(bottles_hash)
@@ -68,6 +116,11 @@ module Homebrew
 
     target_filename = Bottle::Filename.new(match["name"], match["version"], match["os"], rebuild)
 
+    pkg_version = if match["revision"]
+      match["version"] + "_" + match["revision"]
+    else
+      match["version"]
+    end
     bottles_hash = {
       match["name"] => {
         "formula" => {
@@ -75,7 +128,7 @@ module Homebrew
           "homepage" => "",
           "desc" => "",
           "license" => "",
-          "pkg_version" => match["version"] + "_" + match["revision"],
+          "pkg_version" => pkg_version,
           "tap_git_path" => "Formula/#{match["name"]}.rb",
           "tap_git_revision" => "",
         },
@@ -88,7 +141,7 @@ module Homebrew
       }
     }
 
-    bottles_hash
+    UploadBottleData.new(match["name"], pkg_version, rebuild, bottles_hash)
   end
 end
 
