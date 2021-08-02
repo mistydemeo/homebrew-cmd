@@ -6,12 +6,14 @@ module Homebrew
   module_function
 
   class UploadBottleData
-    attr_reader :name, :pkg_version, :rebuild, :bottles_hash
+    attr_reader :name, :pkg_version, :rebuild, :tag, :os, :bottles_hash
 
-    def initialize(name, pkg_version, rebuild, bottles_hash)
+    def initialize(name, pkg_version, rebuild, tag, os, bottles_hash)
       @name = name
       @pkg_version = pkg_version
       @rebuild = rebuild
+      @tag = tag
+      @os = os
       @bottles_hash = bottles_hash
     end
   end
@@ -58,40 +60,64 @@ module Homebrew
     end
     dry_run = args.dry_run?
 
-    filename = args.named.first
-    # Messy, sure, but it works
-    if filename != File.basename(filename)
-      Dir.chdir(File.dirname(filename))
-      filename = File.basename(filename)
+    path = args.named.first
+    Dir.chdir(path)
+    filenames = Dir.entries(".").select {|f| f.end_with?(".tar.gz")}
+    metadata_set = filenames.map { |filename| assemble_fake_json(filename) }
+    metadata_by_version = Hash.new {|hash, key| hash[key] = []}
+    # Put together each batch by its version
+    metadata_set.each do |data|
+      metadata_by_version[data.pkg_version] << data
     end
 
-    data = assemble_fake_json(filename)
-    bottles_hash = data.bottles_hash
+    # Upload each versioned batch separately
+    metadata_by_version.each do |_, bottles|
+      puts "Uploading #{bottles.first.name}@#{bottles.first.pkg_version}"
+      process_upload(bottles, dry_run: dry_run)
+    end
+  end
 
-    should_skip = false
+  def process_upload(bottles, dry_run:)
+    data = bottles.first
+
     source_exists = true
     begin
       bottle_data = JSON.parse(fetch_bottle_data(data).read)
       versions = bottle_data["manifests"].map {|manifest| manifest["annotations"]["org.opencontainers.image.ref.name"]}
-      local_version = data.pkg_version + "." + bottles_hash[data.name]["bottle"]["tags"].keys.first
-      local_version +=  ".#{data.rebuild.to_s}" if data.rebuild > 0
+      bottles.reject! do |bottle|
+        local_version = data.pkg_version + "." + data.os
+        local_version +=  ".#{data.rebuild.to_s}" if data.rebuild > 0
 
-      should_skip = true if versions.include?(local_version)
+        versions.include?(local_version)
+      end
     rescue DownloadError, JSON::ParserError
-      should_skip = false
       source_exists = false
     end
 
-    if should_skip
-      $stderr.puts "Skipping; bottle already uploaded for this version"
+    if bottles.empty?
+      $stderr.puts "Skipping; bottles already uploaded for this version"
       return 0
     end
 
     # We only keep_old if there's already metadata there.
     keep_old = source_exists
 
+    bottles_hash = merge_hash(bottles)
+
     github_releases = GitHubPackages.new(org: "homebrew")
     github_releases.upload_bottles(bottles_hash, keep_old: keep_old, dry_run: dry_run, warn_on_error: false)
+  end
+
+  def merge_hash(bottles)
+    # The base is the same for every one, only the tags differ
+    base = bottles.first.bottles_hash.clone
+    base[bottles.first.name]["bottle"]["tags"] = {}
+
+    bottles.each do |bottle|
+      base[bottle.name]["bottle"]["tags"][bottle.os] = bottle.tag
+    end
+
+    base
   end
 
   def sha256(filename)
@@ -135,6 +161,7 @@ module Homebrew
       if tab
         tags[match["os"]]["tab"] = tab
       end
+      tag = tags[match["os"]]
     else
       $stderr.puts "Unable to parse bottle name!"
       return
@@ -165,7 +192,7 @@ module Homebrew
       }
     }
 
-    UploadBottleData.new(match["name"], pkg_version, rebuild, bottles_hash)
+    UploadBottleData.new(match["name"], pkg_version, rebuild, tag, match["os"], bottles_hash)
   end
 end
 
