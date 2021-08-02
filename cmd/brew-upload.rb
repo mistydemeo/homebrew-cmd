@@ -99,7 +99,12 @@ module Homebrew
   end
 
   def fetch_tab(filename)
-    files = `tar -tf "#{filename}" '*INSTALL_RECEIPT.json' 2>&1`.chomp.split
+    wildcard_flag = if OS.linux?
+      "--wildcards"
+    else
+      ""
+    end
+    files = `tar #{wildcard_flag} -tf "#{filename}" '*INSTALL_RECEIPT.json' 2>&1`.chomp.split
 
     return if files.empty?
     tab = files.first
