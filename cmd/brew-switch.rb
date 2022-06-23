@@ -22,13 +22,18 @@ module Homebrew
         Symlink all of the specified <version> of <formula>'s installation into Homebrew's prefix.
       EOS
 
-      named 2
+      named_args [:formula, :version]
       hide_from_man_page!
     end
   end
 
   def switchversion
     args = switch_args.parse
+
+    unless args.named.present?
+      puts switch_args.generate_help_text
+      exit 1
+    end
 
     name = args.named.first
     rack = Formulary.to_rack(name)
